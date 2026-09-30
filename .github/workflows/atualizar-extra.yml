@@ -1,0 +1,27 @@
+name: Atualizar preço eficiente e marcas
+
+on:
+  schedule:
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pypdf
+      - run: python3 combustiveis-extra/atualizar_extra.py
+      - run: |
+          git config user.name "lf-bot"
+          git config user.email "bot@literaciafinanceira.pt"
+          git add combustiveis-extra/extra.json
+          git commit -m "Combustíveis: preço eficiente e marcas atualizados" || echo "sem alterações"
+          git pull --rebase
+          git push
