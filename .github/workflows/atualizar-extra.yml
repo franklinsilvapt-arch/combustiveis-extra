@@ -3,6 +3,10 @@ name: Atualizar preço eficiente e marcas
 on:
   schedule:
     - cron: "41 7 * * *"
+  push:
+    paths:
+      - "combustiveis-extra/atualizar_extra.py"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
