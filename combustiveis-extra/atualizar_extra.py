@@ -154,23 +154,49 @@ def main():
     with open(OUT, encoding="utf-8") as f:
         dados = json.load(f)
     hoje = date.today().isoformat()
+    erros = []
     try:
         dados["marcas"] = {"data": hoje, "minPostos": MIN_POSTOS, "gasolina": marcas(3201), "gasoleo": marcas(2101)}
     except Exception as e:
-        print("Marcas: leitura da DGEG falhou, mantidos os valores anteriores:", e, file=sys.stderr)
+        erros.append("Marcas: leitura da DGEG falhou, mantidos os valores anteriores: %s" % e)
     try:
         novo = eficiente()
         if novo and novo["fonte"] != dados.get("eficiente", {}).get("fonte"):
             dados["eficiente"] = novo
+            dados["eficiente_lido"] = hoje
             print("Preço eficiente atualizado:", novo["semana"], "(com comparação)" if "anterior" in novo else "(sem comparação)")
         elif not novo:
-            print("Preço eficiente: relatório não lido, mantidos os valores anteriores", file=sys.stderr)
+            erros.append("Preço eficiente: relatório da ERSE não lido, mantidos os valores anteriores")
     except Exception as e:  # o bloco da ERSE nunca deve impedir a atualização das marcas
-        print("Preço eficiente: leitura falhou, mantidos os valores anteriores:", e, file=sys.stderr)
+        erros.append("Preço eficiente: leitura falhou, mantidos os valores anteriores: %s" % e)
+    # a ERSE publica um relatório por semana: mais de 16 dias sem um novo é sinal de que algo mudou
+    lido = dados.setdefault("eficiente_lido", hoje)
+    if (date.today() - date.fromisoformat(lido)).days > 16:
+        erros.append("Preço eficiente: sem relatório novo da ERSE desde %s" % lido)
     dados["atualizado"] = hoje
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=1)
     print("Marcas:", len(dados["marcas"]["gasolina"]["lista"]), "gasolina,", len(dados["marcas"]["gasoleo"]["lista"]), "gasóleo")
+    publicar("Atualiza preços dos combustíveis (%s)" % hoje)
+    if erros:  # falhar o workflow faz o GitHub enviar um email de aviso
+        for e in erros:
+            print("ERRO:", e, file=sys.stderr)
+        sys.exit(1)
+
+
+def publicar(mensagem):
+    """Grava o extra.json no repositório quando corre no GitHub Actions."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    raiz = os.path.dirname(os.path.abspath(OUT))
+    git = lambda *a: subprocess.run(["git", "-C", raiz, *a], check=False)
+    git("config", "user.name", "lf-bot")
+    git("config", "user.email", "bot@literaciafinanceira.pt")
+    git("add", os.path.basename(OUT))
+    if subprocess.run(["git", "-C", raiz, "diff", "--cached", "--quiet"]).returncode:
+        git("commit", "-m", mensagem)
+        git("pull", "--rebase")
+        git("push")
 
 
 if __name__ == "__main__":
